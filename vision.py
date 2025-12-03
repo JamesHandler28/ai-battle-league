@@ -10,7 +10,7 @@ def cast_ray(start, end, polygons):
 
 
 def check_line_of_sight(start_pos, end_pos, polygons):
-    """Check LoS using polygon-only geometry. Uses two offset rays for thickness."""
+    """Check LoS using polygon-only geometry. Uses multiple offset rays for robust blocking."""
     # Primary ray
     if cast_ray(start_pos, end_pos, polygons):
         return False
@@ -20,11 +20,20 @@ def check_line_of_sight(start_pos, end_pos, polygons):
     dist = np.linalg.norm(vec)
     if dist == 0:
         return True
+    
     perp = np.array([-vec[1], vec[0]]) / dist * 12.0
-
+    
+    # Check three offset rays to be thorough
     if cast_ray(start_pos + perp, end_pos + perp, polygons):
         return False
     if cast_ray(start_pos - perp, end_pos - perp, polygons):
+        return False
+    
+    # Also check with a slightly wider offset to catch edges
+    perp_wide = perp * 1.5
+    if cast_ray(start_pos + perp_wide, end_pos + perp_wide, polygons):
+        return False
+    if cast_ray(start_pos - perp_wide, end_pos - perp_wide, polygons):
         return False
 
     return True
