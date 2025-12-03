@@ -131,27 +131,16 @@ class Gladiator:
                 nearby_walls.append(w)
         # -------------------------------------------------
 
-        
-
-
-
-        # ---- STUCK DETECTION ----
-        dist = np.linalg.norm(np.array(self.pos) - self.last_pos)
-
-        # If barely moved → count up (but not if we're actively escaping)
+        # --- Stuck detection / escape logic cleaned ---
+        dist = np.linalg.norm(self.pos - self.last_pos)
         if dist < 0.5:
-            # Only increment stuck_timer if we're not currently in escape mode
             if self.escape_timer <= 0:
                 self.stuck_timer += 1
-            # If in escape mode but STILL not moving, increment slowly (to eventually trigger extreme nudge)
-            # but cap it to prevent infinite growth
-            elif self.stuck_timer < 100:
-                self.stuck_timer += 0.5  # slower increment during escape attempt
+            else:
+                self.stuck_timer = min(self.stuck_timer + 0.5, 100)
         else:
-            # Check if we've moved far enough from the stuck origin to consider it a real escape
             if self.stuck_timer > 0 and self.stuck_origin is not None:
-                escape_distance = np.linalg.norm(self.pos - self.stuck_origin)
-                if escape_distance > 50:  # Must move 50px away to break the stuck loop
+                if np.linalg.norm(self.pos - self.stuck_origin) > 50:
                     self.stuck_timer = 0
                     self.stuck_reported = False
                     self.escape_timer = 0
@@ -159,144 +148,45 @@ class Gladiator:
             else:
                 self.stuck_timer = 0
                 self.stuck_reported = False
-                self.escape_timer = 0  # Clear escape mode once we've moved
+                self.escape_timer = 0
 
-        self.last_pos = np.array(self.pos)
+        self.last_pos = self.pos.copy()
 
-        # 8 frames stuck = 0.13 seconds at 60fps
+        # Trigger escape push
         if self.stuck_timer > 8 and self.escape_timer <= 0:
-
-            # Log stuck detection once per event
             if not self.stuck_reported:
+                self.stuck_origin = self.pos.copy()
+                self.stuck_reported = True
                 try:
-                    debug_console.console_log("stuck_detected", {
-                        "name": self.name,
-                        "pos": self.pos.tolist(),
-                        "vel": self.vel.tolist(),
-                        "nearby_walls_count": len(nearby_walls),
-                        "stuck_timer": int(self.stuck_timer)
-                    })
+                    debug_console.console_log("stuck_detected", {"name": self.name, "pos": self.pos.tolist()})
                 except Exception:
                     pass
-                self.stuck_reported = True
-                # Record where we got stuck (for tracking escape distance)
-                if self.stuck_origin is None:
-                    self.stuck_origin = self.pos.copy()
-
-            # --- FIND CLOSEST OBSTACLE NORMAL (rectangles, circles, rotated walls, polygons) ---
-            best_dist = 9999
+            # Compute normal away from nearest obstacle (rects/circles only for simplicity)
             normal = np.array([0.0, 0.0])
-
+            best_dist = 9999
             px, py = self.pos
-
-            # Check rectangular walls
             for w in walls:
-                # Compute closest point on rectangle to player
                 cx = np.clip(px, w.x, w.x + w.width)
                 cy = np.clip(py, w.y, w.y + w.height)
-                # Vector from closest point to player
                 vect = np.array([px - cx, py - cy])
-                d = np.linalg.norm(vect)
-                if d < best_dist:
-                    best_dist = d
-                    if d < 1e-6:
-                        # Degenerate case: player exactly on wall corner; use fallback
-                        normal = np.array([1.0 if px < w.x else -1.0, 0.0])
-                    else:
-                        normal = vect / d
-
-            # Check circles
-            for center, radius in circles:
-                center = np.array(center)
-                vect = self.pos - center
                 d = np.linalg.norm(vect)
                 if d < best_dist and d > 1e-6:
                     best_dist = d
                     normal = vect / d
-                elif d < best_dist and d <= 1e-6:
-                    # Player at center of circle, random escape
-                    normal = np.array([1.0, 0.0])
-
-            # Check rotated walls (closest point on rotated rect)
-            for r_wall in rot_walls:
-                # Use existing physics helper to get closest point
-                hit, normal_vec, _ = physics.check_circle_rotated_rect(self.pos, 0.1, r_wall)
-                if hit or normal_vec is not None:
-                    if normal_vec is not None:
-                        vect = self.pos - (self.pos + normal_vec * 100)  # approx normal
-                        d_approx = 5  # assume close to rotated wall if we hit it
-                        if d_approx < best_dist:
-                            best_dist = d_approx
-                            normal = normal_vec if np.linalg.norm(normal_vec) > 0 else np.array([1.0, 0.0])
-
-            # Check polygons (similar approach)
-            for poly in polygons:
-                hit, _ = physics.resolve_circle_polygon(np.array(self.pos), 0.1, poly)
-                if hit:
-                    # Find closest vertex or edge for escape direction
-                    min_vertex_dist = 9999
-                    closest_vertex = None
-                    for vertex in poly:
-                        v_dist = np.linalg.norm(np.array(self.pos) - np.array(vertex))
-                        if v_dist < min_vertex_dist:
-                            min_vertex_dist = v_dist
-                            closest_vertex = vertex
-                    
-                    if closest_vertex is not None and min_vertex_dist < best_dist:
-                        vect = np.array(self.pos) - np.array(closest_vertex)
-                        if np.linalg.norm(vect) > 1e-6:
-                            best_dist = min_vertex_dist
-                            normal = vect / np.linalg.norm(vect)
-
-            # Normalize
-            n = normal / (np.linalg.norm(normal) + 1e-6)
-
-            # Log escape direction and wall info
-            try:
-                debug_console.console_log("stuck_escape_dir", {
-                    "name": self.name,
-                    "best_dist_to_wall": float(best_dist),
-                    "escape_normal": n.tolist()
-                })
-            except Exception:
-                pass
-
-            # Store escape direction
-            self.escape_dir = n
-            self.escape_timer = 20    # ~0.33 seconds
-            
-            # If extremely stuck, apply a velocity nudge in the escape direction
+            for center, rad in circles:
+                vect = self.pos - np.array(center)
+                d = np.linalg.norm(vect)
+                if d < best_dist and d > 1e-6:
+                    best_dist = d
+                    normal = vect / d
+            if np.linalg.norm(normal) < 1e-6:
+                normal = np.array([1.0, 0.0])
+            self.escape_dir = normal / (np.linalg.norm(normal) + 1e-6)
+            self.escape_timer = 20
             if self.stuck_timer > 50:
-                # The escape_dir was already computed above.
-                # Now we simply push them in that direction WITHOUT teleporting.
-                base_dir = self.escape_dir.copy()
-
-                # If somehow zero, give a fallback
-                if np.linalg.norm(base_dir) < 1e-6:
-                    base_dir = np.array([1.0, 0.0])
-
-                # Normalize
-                base_dir = base_dir / (np.linalg.norm(base_dir) + 1e-6)
-
-                # Stronger shove the longer they are stuck
-                nudge_strength = 3.0 if self.stuck_timer > 80 else 1.5
-
-                # Apply a velocity push ONLY
-                self.vel += base_dir * nudge_strength
-
-                # Extend the escape timer so they KEEP moving this direction
+                nudge = 3.0 if self.stuck_timer > 80 else 1.5
+                self.vel += self.escape_dir * nudge
                 self.escape_timer = max(self.escape_timer, 40)
-
-                # Report debug
-                try:
-                    debug_console.console_log("stuck_simple_push", {
-                        "name": self.name,
-                        "stuck_timer": int(self.stuck_timer),
-                        "nudge_strength": float(nudge_strength),
-                        "escape_dir": base_dir.tolist()
-                    })
-                except Exception:
-                    pass
 
         # 2. FIND TARGET
         closest_visible_enemy = None
@@ -501,11 +391,19 @@ class Gladiator:
                 sound_manager.play_swing()
                 for _ in range(5):
                     particles.append(Particle(closest_visible_enemy.pos[0], closest_visible_enemy.pos[1], (255, 0, 0), 4))
+                # If the hit killed the target, play death sound only; otherwise play collision
                 if closest_visible_enemy.hp <= 0:
                     closest_visible_enemy.alive = False
-                    print(f"[DEATH] {closest_visible_enemy.name} died from melee by {self.name}")
-                    sound_manager.play_death()
+                    try:
+                        sound_manager.play_death()
+                    except Exception:
+                        pass
                     kill_feed.append(f"{self.name} STABBED {closest_visible_enemy.name}")
+                else:
+                    try:
+                        sound_manager.play_collision()
+                    except Exception:
+                        pass
             else:
                 wants_to_throw = random.random() > self.melee_bias
                 if self.has_weapon and self.cooldown <= 0 and min_vis_dist < 800 and wants_to_throw:
@@ -660,18 +558,27 @@ class Gladiator:
                     if e.team_id != self.team_id and e.alive:
                         hit, _, _ = physics.check_circle_rotated_rect(e.pos, e.radius, weapon_hitbox)
                         if hit:
-                            e.hp -= self.throw_dmg 
+                            e.hp -= self.throw_dmg
                             self.weapon_flying = False
-                            for _ in range(10): particles.append(Particle(e.pos[0], e.pos[1], (200, 0, 0), 5))
-                            if e.hp <= 0: 
+                            # If the projectile killed the player, play death sound only; otherwise play collision
+                            if e.hp <= 0:
                                 e.alive = False
-                                print(f"[DEATH] {e.name} died from projectile by {self.name}")
-                                sound_manager.play_death()
+                                try:
+                                    sound_manager.play_death()
+                                except Exception:
+                                    pass
                                 kill_feed.append(f"{self.name} SNIPED {e.name}")
+                            else:
+                                try:
+                                    sound_manager.play_collision()
+                                except Exception:
+                                    pass
+                            for _ in range(10):
+                                particles.append(Particle(e.pos[0], e.pos[1], (200, 0, 0), 5))
                             break
         
+        # --- Weapon pickup simplified ---
         if not self.has_weapon and not self.weapon_flying and self.weapon_pos is not None:
-            # FIX: Larger pickup radius (60)
-            if np.linalg.norm(self.pos - self.weapon_pos) < 60:
+            if np.linalg.norm(self.pos - self.weapon_pos) < 60:  # larger pickup radius
                 self.has_weapon = True
                 self.weapon_pos = None

@@ -14,6 +14,9 @@ def load_sound(filename, volume=1.0):
     
     try:
         path = os.path.join("assets", filename)
+        # If the file doesn't exist, silently return None (avoid noisy warnings)
+        if not os.path.exists(path):
+            return None
         sound = pygame.mixer.Sound(path)
         sound.set_volume(min(1.0, volume))
         SOUND_CACHE[filename] = sound
@@ -59,8 +62,7 @@ def init_sounds():
     # Create a dedicated channel for death sounds (prevents overlapping)
     DEATH_CHANNEL = pygame.mixer.Channel(0)
     
-    print(f"[SoundManager] Death sound loaded: {DEATH_SOUND}")
-    print(f"[SoundManager] Death channel allocated: {DEATH_CHANNEL}")
+    # Silent in normal runs: avoid terminal output about loaded sounds
 
 def play_swing():
     """Play swing sound effect"""
@@ -83,10 +85,10 @@ def play_walk():
 def play_death():
     """Play death sound effect - uses dedicated channel to ensure it plays"""
     if DEATH_SOUND and DEATH_CHANNEL:
-        print(f"[SoundManager] Playing death sound on dedicated channel")
         DEATH_CHANNEL.play(DEATH_SOUND)
     else:
-        print(f"[SoundManager] WARNING: Death sound or channel is None!")
+        # Do not print warnings to terminal; silently ignore missing channel/sound
+        pass
 
 def play_collision():
     """Play weapon collision sound effect"""
@@ -105,8 +107,7 @@ def _synthesize_beep(frequency=880.0, duration=0.12, volume=0.5, sample_rate=441
         sound = pygame.sndarray.make_sound(audio)
         return sound
     except Exception as e:
-        # If sndarray not available or failure, fallback to None
-        print(f"[SoundManager] Warning: failed to synthesize beep: {e}")
+        # If sndarray not available or failure, fallback to None (silent)
         return None
 
 
@@ -146,7 +147,7 @@ def play_countdown_single():
             # measurement and gives the user explicit control.
             return None
         except Exception as e:
-            print(f"[SoundManager] Warning: failed to play single countdown: {e}")
+            # Silent on playback error
             return None
     return None
 
