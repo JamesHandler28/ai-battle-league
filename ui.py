@@ -94,3 +94,30 @@ def draw_right_panel(surface, red_team, kill_feed, font_title, font_text):
         txt = font_text.render(msg, True, (200, 200, 200))
         surface.blit(txt, (20, msg_y))
         msg_y += 25
+
+def draw_debug_panel(surface, players, font):
+    """Draws a debug panel on the left UI surface."""
+    y_offset = 300  # Start below the team list
+    for i, p in enumerate(players):
+        state = "IDLE"
+        if p.escape_timer > 0:
+            state = f"ESCAPE ({p.escape_timer})"
+        elif p.stuck_timer > 0:
+            state = f"STUCK ({p.stuck_timer})"
+        elif p.wander_target is not None:
+            state = "WANDER"
+        elif p.patrol_target is not None:
+            state = "PATROL"
+        
+        color = (255, 255, 0) # Yellow for debug info
+        
+        debug_text = f"{p.name}: {state}"
+        text_surf = font.render(debug_text, True, color)
+        surface.blit(text_surf, (10, y_offset))
+        y_offset += 20
+        
+        if p.move_target is not None:
+            target_text = f"  Target: ({int(p.move_target[0])}, {int(p.move_target[1])})"
+            text_surf = font.render(target_text, True, color)
+            surface.blit(text_surf, (10, y_offset))
+            y_offset += 25 # Extra space between players

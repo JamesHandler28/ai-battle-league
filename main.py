@@ -10,6 +10,11 @@ import assets_manager
 import sound_manager
 from entities import Gladiator, Particle
 from ui import draw_left_panel, draw_right_panel, draw_debug_panel
+try:
+    import tkinter as tk
+    _tk_available = True
+except Exception:
+    _tk_available = False
 
 # --- SETUP DISPLAY ---
 os.environ['SDL_VIDEO_CENTERED'] = '1'
@@ -85,7 +90,7 @@ def main():
     for i, name in enumerate(roster.TEAM_GREEN_NAMES):
         stats = get_bot_by_name(name)
         spawn_x = (settings.GAME_WIDTH / (len(roster.TEAM_GREEN_NAMES) + 1)) * (i+1)
-        green_team.append(Gladiator(spawn_x, 150, 0, stats))
+        green_team.append(Gladiator(spawn_x, 100, 0, stats))
         # Update sprite to high res
         green_team[-1].base_image = assets_manager.load_texture(stats.image_file, size=(player_size, player_size))
         green_team[-1].angle = math.pi / 2
@@ -94,7 +99,7 @@ def main():
     for i, name in enumerate(roster.TEAM_RED_NAMES):
         stats = get_bot_by_name(name)
         spawn_x = (settings.GAME_WIDTH / (len(roster.TEAM_RED_NAMES) + 1)) * (i+1)
-        red_team.append(Gladiator(spawn_x, settings.GAME_HEIGHT - 150, 1, stats))
+        red_team.append(Gladiator(spawn_x, settings.GAME_HEIGHT - 100, 1, stats))
         # Update sprite to high res
         red_team[-1].base_image = assets_manager.load_texture(stats.image_file, size=(player_size, player_size))
         red_team[-1].angle = -math.pi / 2
@@ -114,6 +119,9 @@ def main():
     countdown_last_play = None
     countdown_audio_start = None
     countdown_audio_length = None
+    # Clipboard HUD
+    clipboard_msg = None
+    clipboard_msg_time = 0
     
     # Surfaces for UI
     left_ui_surface = pygame.Surface((SIDE_PANEL_WIDTH, MONITOR_H))
@@ -125,12 +133,16 @@ def main():
 
         # --- EVENT LOOP (Checking for Spacebar) ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r: main(); return
-                if event.key == pygame.K_d: show_debug_walls = not show_debug_walls
-                if event.key == pygame.K_ESCAPE: running = False
-                
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    main(); return
+                if event.key == pygame.K_d:
+                    show_debug_walls = not show_debug_walls
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+
                 if event.key == pygame.K_SPACE:
                     if game_state == "WAITING":
                         game_state = "COUNTDOWN"
@@ -155,6 +167,41 @@ def main():
                     elif game_state == "GAME_OVER":
                         main() # Restart
                         return
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                # Left click only
+                if event.button == 1 and show_debug_walls:
+                    mx, my = event.pos
+                    # Ensure inside the game view (not side panels)
+                    if SIDE_PANEL_WIDTH <= mx <= SIDE_PANEL_WIDTH + DISPLAY_GAME_WIDTH and 0 <= my <= DISPLAY_GAME_HEIGHT:
+                        gx = int((mx - SIDE_PANEL_WIDTH) / SCALE)
+                        gy = int(my / SCALE)
+                        # Prepare text for clipboard: coords + template rect
+                        rect_w, rect_h = 100, 50
+                        copy_text = f"({gx}, {gy})\npygame.Rect({gx}, {gy}, {rect_w}, {rect_h})"
+                        # Try tkinter clipboard first, fallback to Windows clip
+                        copied = False
+                        try:
+                            if _tk_available:
+                                r = tk.Tk()
+                                r.withdraw()
+                                r.clipboard_clear()
+                                r.clipboard_append(copy_text)
+                                r.update()
+                                r.destroy()
+                                copied = True
+                        except Exception:
+                            copied = False
+                        if not copied:
+                            try:
+                                import subprocess
+                                p = subprocess.Popen('clip', stdin=subprocess.PIPE, shell=True)
+                                p.communicate(copy_text.encode('utf-8'))
+                                copied = (p.returncode == 0)
+                            except Exception:
+                                copied = False
+
+                        clipboard_msg = f"Copied: ({gx}, {gy})"
+                        clipboard_msg_time = current_time
 
         # --- GAME LOGIC ---
         if game_state == "PLAYING" and not game_over:
@@ -174,8 +221,9 @@ def main():
 
             for p in all_players:
                 enemies = [e for e in all_players if e.team_id != p.team_id]
-                p.logic(enemies, all_players, map_config.WALLS, map_config.CIRCLES, map_config.ROTATED_WALLS, map_config.POLYGONS, particles, kill_feed)
-                p.update_weapon(map_config.WALLS, map_config.CIRCLES, map_config.ROTATED_WALLS, map_config.POLYGONS, all_players, particles, kill_feed)
+                # Pass polygons-only (map_config.POLYGONS)
+                p.logic(enemies, all_players, map_config.POLYGONS, particles, kill_feed)
+                p.update_weapon(map_config.POLYGONS, all_players, particles, kill_feed)
             
             # Handle walk sounds at game level - constant rate if any player is moving
             any_player_moving = any(np.linalg.norm(p.vel) > 0.5 for p in all_players if p.alive)
@@ -311,6 +359,50 @@ def main():
                     g_corners = physics.get_corners(weapon_pos, (50, 16), angle_deg)
                     s_corners = [to_screen(c) for c in g_corners]
                     pygame.draw.lines(window, (255, 255, 0), True, s_corners, 3)
+
+            # --- NEW: Cursor Map Info ---
+            # Show game/map coordinates and pixel color under the cursor
+            try:
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                # Only show when cursor is inside the game area
+                if SIDE_PANEL_WIDTH <= mouse_x <= SIDE_PANEL_WIDTH + DISPLAY_GAME_WIDTH and 0 <= mouse_y <= DISPLAY_GAME_HEIGHT:
+                    game_x = (mouse_x - SIDE_PANEL_WIDTH) / SCALE
+                    game_y = mouse_y / SCALE
+                    coord_text = f"Map: ({int(game_x)}, {int(game_y)})"
+                    txt_surf = font_text.render(coord_text, True, (255, 255, 255))
+
+                    col_surf = None
+                    if background_img:
+                        # sample the scaled background image at the cursor local coordinates
+                        local_x = int(mouse_x - SIDE_PANEL_WIDTH)
+                        local_y = int(mouse_y)
+                        if 0 <= local_x < DISPLAY_GAME_WIDTH and 0 <= local_y < DISPLAY_GAME_HEIGHT:
+                            try:
+                                col = background_img.get_at((local_x, local_y))
+                                col_text = f"Pixel: {col[0]}, {col[1]}, {col[2]}"
+                                col_surf = font_text.render(col_text, True, (255, 255, 255))
+                            except Exception:
+                                col_surf = None
+
+                    # Build HUD surface
+                    hud_w = txt_surf.get_width() + 8
+                    hud_h = txt_surf.get_height() + 8
+                    if col_surf:
+                        hud_w = max(hud_w, col_surf.get_width() + 8)
+                        hud_h += col_surf.get_height()
+
+                    hud = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
+                    hud.fill((0, 0, 0, 160))
+                    hud.blit(txt_surf, (4, 4))
+                    if col_surf:
+                        hud.blit(col_surf, (4, 4 + txt_surf.get_height()))
+
+                    # Position HUD slightly offset from cursor so it doesn't obscure the pixel
+                    hud_x = min(mouse_x + 16, SIDE_PANEL_WIDTH + DISPLAY_GAME_WIDTH - hud_w)
+                    hud_y = min(mouse_y + 16, DISPLAY_GAME_HEIGHT - hud_h)
+                    window.blit(hud, (hud_x, hud_y))
+            except Exception:
+                pass
 
 
         # 4. Draw UI

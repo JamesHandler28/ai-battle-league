@@ -53,7 +53,7 @@ ALL_BOTS = [
     BotStats("Wonder",    "DCWonder.png",    hp=9, speed=0.5, melee_dmg=2, throw_dmg=6, cooldown=30, aggression=100, strafe_rate=0.0, accuracy=0.5, melee_bias=0.3),
 
     # TEAM SOUTH PARK (WHITE)
-    BotStats("Cartman",   "SPCartman.png",   hp=9, speed=0.1, melee_dmg=5, throw_dmg=6, cooldown=120, aggression=150, strafe_rate=0.1, accuracy=0.7, melee_bias=0.4),
+    BotStats("Cartman",   "SPCartman.png",   hp=9, speed=0.2, melee_dmg=5, throw_dmg=6, cooldown=120, aggression=150, strafe_rate=0.1, accuracy=0.7, melee_bias=0.4),
     BotStats("Kenny",     "SPKenny.png",     hp=9, speed=0.7, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=200, strafe_rate=0.5, accuracy=0.5, melee_bias=0.5),
     BotStats("Kyle",      "SPKyle.png",      hp=9, speed=0.4, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=500, strafe_rate=0.2, accuracy=0.8, melee_bias=0.5),
     BotStats("Stan",      "SPStan.png",      hp=9, speed=0.5, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=300, strafe_rate=0.2, accuracy=0.7, melee_bias=0.4),
@@ -68,9 +68,9 @@ ALL_BOTS = [
 # --- MATCHUP CONFIG ---
 
 # 1. Custom Team Names (Displayed in UI)
-TEAM_GREEN_TITLE = "Bikini Bottom"
-TEAM_RED_TITLE   = "Simpsons"
+TEAM_GREEN_TITLE = "Mushroom Kingdom"
+TEAM_RED_TITLE   = "DC"
 
 # 2. Who is fighting?
-TEAM_GREEN_NAMES = ["Spongebob", "Patrick", "Squidward", "Mr. Krabs"]
-TEAM_RED_NAMES   = ["Homer", "Bart", "Lisa", "Marge"]
+TEAM_GREEN_NAMES = ["Mario", "Luigi", "Bowser", "Peach"]
+TEAM_RED_NAMES   = ["Superman", "Batman", "Flash", "Wonder"]

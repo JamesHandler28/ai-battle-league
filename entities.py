@@ -6,29 +6,16 @@ import settings
 import physics
 import vision
 import assets_manager
-import debug_console
 import sound_manager
 
 
-def is_point_free(pt, walls_check, circles_list=None, rot_walls_list=None, polygons_list=None, radius=25):
-    """Module-level safe check whether a point is free of obstacles.
-    This function is used to avoid nested-local name issues and will
-    fall back to conservative defaults on error.
+def is_point_free(pt, polygons_list, radius=25):
+    """Return True if a circle at `pt` with `radius` does not intersect any polygon.
+    Conservative: any exception returns False.
     """
     try:
-        if circles_list is None: circles_list = []
-        if rot_walls_list is None: rot_walls_list = []
-        if polygons_list is None: polygons_list = []
-
-        r = pygame.Rect(pt[0]-15, pt[1]-15, 30, 30)
-        if any(r.colliderect(w) for w in walls_check):
-            return False
-        for center, rad in circles_list:
-            if np.linalg.norm(np.array(pt) - np.array(center)) < rad + radius:
-                return False
-        for r_wall in rot_walls_list:
-            if physics.check_circle_rotated_rect(pt, radius, r_wall)[0]:
-                return False
+        if polygons_list is None:
+            polygons_list = []
         for poly in polygons_list:
             hit, _ = physics.resolve_circle_polygon(np.array(pt), radius, poly)
             if hit:
@@ -37,7 +24,6 @@ def is_point_free(pt, walls_check, circles_list=None, rot_walls_list=None, polyg
             return False
         return True
     except Exception:
-        # Be conservative: if anything goes wrong, treat point as blocked
         return False
 
 class Particle:
@@ -117,18 +103,24 @@ class Gladiator:
         self.stuck_reported = False
         self.stuck_origin = None  # Track where we got stuck
         self.walk_sound_timer = random.randint(0, 9)  # Stagger walk sounds so not all 8 players walk at once
+        self.move_target = None  # Current movement target for debug display
 
-    def logic(self, enemies, all_players, walls, circles, rot_walls, polygons, particles, kill_feed):
+    def logic(self, enemies, all_players, polygons, particles, kill_feed):
         if not self.alive: return
 
         
 
-        # --- OPTIMIZATION: Filter Walls (Prevents Lag) ---
-        nearby_walls = []
+        # --- OPTIMIZATION: Filter Polygons (Prevents Lag) ---
+        nearby_polygons = []
         box_size = 300
-        for w in walls:
-            if abs(self.pos[0] - w.centerx) < box_size and abs(self.pos[1] - w.centery) < box_size:
-                nearby_walls.append(w)
+        px, py = self.pos
+        for poly in polygons:
+            xs = [p[0] for p in poly]
+            ys = [p[1] for p in poly]
+            cx = (min(xs) + max(xs)) / 2.0
+            cy = (min(ys) + max(ys)) / 2.0
+            if abs(px - cx) < box_size and abs(py - cy) < box_size:
+                nearby_polygons.append(poly)
         # -------------------------------------------------
 
         # --- Stuck detection / escape logic cleaned ---
@@ -157,28 +149,25 @@ class Gladiator:
             if not self.stuck_reported:
                 self.stuck_origin = self.pos.copy()
                 self.stuck_reported = True
-                try:
-                    debug_console.console_log("stuck_detected", {"name": self.name, "pos": self.pos.tolist()})
-                except Exception:
-                    pass
-            # Compute normal away from nearest obstacle (rects/circles only for simplicity)
+            # Compute normal away from nearest polygon obstacle
             normal = np.array([0.0, 0.0])
             best_dist = 9999
             px, py = self.pos
-            for w in walls:
-                cx = np.clip(px, w.x, w.x + w.width)
-                cy = np.clip(py, w.y, w.y + w.height)
-                vect = np.array([px - cx, py - cy])
-                d = np.linalg.norm(vect)
-                if d < best_dist and d > 1e-6:
-                    best_dist = d
-                    normal = vect / d
-            for center, rad in circles:
-                vect = self.pos - np.array(center)
-                d = np.linalg.norm(vect)
-                if d < best_dist and d > 1e-6:
-                    best_dist = d
-                    normal = vect / d
+            for poly in nearby_polygons:
+                # find closest point on polygon edges to self.pos
+                for i in range(len(poly)):
+                    p1 = np.array(poly[i])
+                    p2 = np.array(poly[(i+1) % len(poly)])
+                    edge = p2 - p1
+                    elen2 = np.dot(edge, edge)
+                    if elen2 == 0: continue
+                    t = max(0, min(1, np.dot(self.pos - p1, edge) / elen2))
+                    closest = p1 + t * edge
+                    vect = self.pos - closest
+                    d = np.linalg.norm(vect)
+                    if d < best_dist and d > 1e-6:
+                        best_dist = d
+                        normal = vect / d
             if np.linalg.norm(normal) < 1e-6:
                 normal = np.array([1.0, 0.0])
             self.escape_dir = normal / (np.linalg.norm(normal) + 1e-6)
@@ -195,28 +184,19 @@ class Gladiator:
             if not e.alive: continue
             dist = np.linalg.norm(e.pos - self.pos)
             if dist < 800:
-                if vision.check_line_of_sight(self.pos, e.pos, nearby_walls, circles, rot_walls, polygons):
+                if vision.check_line_of_sight(self.pos, e.pos, nearby_polygons):
                     if dist < min_vis_dist:
                         min_vis_dist = dist
                         closest_visible_enemy = e
 
         # 3. PICK MOVE TARGET
         move_target = self.pos.copy()
+        self.move_target = move_target  # Store for debug panel
 
         # If severely stuck, pick a reachable wander position (your existing helper)
         if self.stuck_timer > 30:
             if self.wander_target is None or self.stuck_timer % 30 == 0:
-                self.wander_target = self.find_reachable_wander(nearby_walls)
-                try:
-                    debug_console.console_log("stuck_wander_target", {
-                        "name": self.name,
-                        "pos": self.pos.tolist(),
-                        "wander_target": self.wander_target.tolist(),
-                        "escape_dir": self.escape_dir.tolist(),
-                        "stuck_timer": int(self.stuck_timer)
-                    })
-                except Exception:
-                    pass
+                self.wander_target = self.find_reachable_wander(polygons) # Use full polygons for better reachability check
             move_target = self.wander_target
 
         elif not self.has_weapon and self.weapon_pos is not None:
@@ -253,21 +233,21 @@ class Gladiator:
                 candidate = self.pos + (perp * self.strafe_dir) + (vec * dist_factor)
 
                 # if candidate is blocked, try opposite strafe; if still blocked, try a small outward offset
-                if not is_point_free(candidate, nearby_walls, circles, rot_walls, polygons, self.radius):
+                if not is_point_free(candidate, nearby_polygons, self.radius):
                     # try opposite
                     candidate2 = self.pos + (perp * -self.strafe_dir) + (vec * dist_factor)
-                    if is_point_free(candidate2, nearby_walls, circles, rot_walls, polygons, self.radius):
+                    if is_point_free(candidate2, nearby_polygons, self.radius):
                         self.strafe_dir *= -1  # commit to opposite
                         candidate = candidate2
                         self.strafe_cooldown = 14
                     else:
                         # try a small offset directly away from the nearest wall (escape push)
                         escape = self.pos - (vec / (np.linalg.norm(vec)+1e-6)) * 30
-                        if is_point_free(escape, nearby_walls, circles, rot_walls, polygons, self.radius):
+                        if is_point_free(escape, nearby_polygons, self.radius):
                             candidate = escape
                         else:
                             # fallback: find a nearby reachable point
-                            candidate = self.find_reachable_wander(nearby_walls)
+                            candidate = self.find_reachable_wander(polygons) # Use full polygons for better reachability check
 
                 move_target = candidate
 
@@ -275,6 +255,9 @@ class Gladiator:
             if self.patrol_target is None or np.linalg.norm(self.pos - self.patrol_target) < 50:
                 self.patrol_target = np.array([random.uniform(50, settings.GAME_WIDTH-50), random.uniform(50, settings.GAME_HEIGHT-50)])
             move_target = self.patrol_target
+
+        # Store final move target for debug display
+        self.move_target = move_target
 
         # 4. FAN SWEEP + sliding + apply acceleration
         diff = move_target - self.pos
@@ -288,24 +271,21 @@ class Gladiator:
                 # Apply collision handling to escape direction
                 step = 10.0
                 test = self.pos + desired_dir * step
-                test_rect = pygame.Rect(test[0]-15, test[1]-15, 30, 30)
-                blocked = any(test_rect.colliderect(w) for w in nearby_walls)
-                
+                blocked = not is_point_free(test, nearby_polygons, self.radius)
+
                 if blocked:
                     # Try sliding on X axis during escape
                     slide_x = np.array([desired_dir[0], 0.0])
                     if np.linalg.norm(slide_x) > 0:
                         test = self.pos + slide_x * step
-                        test_rect = pygame.Rect(test[0]-15, test[1]-15, 30, 30)
-                        if not any(test_rect.colliderect(w) for w in nearby_walls):
+                        if is_point_free(test, nearby_polygons, self.radius):
                             desired_dir = slide_x / np.linalg.norm(slide_x)
                         else:
                             # Try sliding on Y axis
                             slide_y = np.array([0.0, desired_dir[1]])
                             if np.linalg.norm(slide_y) > 0:
                                 test = self.pos + slide_y * step
-                                test_rect = pygame.Rect(test[0]-15, test[1]-15, 30, 30)
-                                if not any(test_rect.colliderect(w) for w in nearby_walls):
+                                if is_point_free(test, nearby_polygons, self.radius):
                                     desired_dir = slide_y / np.linalg.norm(slide_y)
                                 else:
                                     # Both axes blocked: try a small perpendicular jitter
@@ -323,7 +303,7 @@ class Gladiator:
             else:
                 # Check straight ahead with raycast
                 look_ahead = self.pos + desired_dir * 50
-                blocked_ahead = vision.cast_ray(self.pos, look_ahead, nearby_walls, circles, rot_walls, polygons)
+                blocked_ahead = vision.cast_ray(self.pos, look_ahead, nearby_polygons) 
 
                 if blocked_ahead:
                     # BLOCKED! Try Fan Sweep to find an actually traversable opening (also validate with point_is_free)
@@ -332,7 +312,7 @@ class Gladiator:
                         test_dir = physics.rotate_vector(desired_dir, angle)
                         test_look = self.pos + test_dir * 50
                         # require both line-of-sight to that point AND that landing point is free
-                        if not vision.cast_ray(self.pos, test_look, nearby_walls, circles, rot_walls, polygons) and is_point_free(self.pos + test_dir*15, nearby_walls, circles, rot_walls, polygons, self.radius):
+                        if not vision.cast_ray(self.pos, test_look, nearby_polygons) and is_point_free(self.pos + test_dir*15, nearby_polygons, self.radius):
                             desired_dir = test_dir
                             found_path = True
                             break
@@ -342,28 +322,25 @@ class Gladiator:
                         desired_dir = -desired_dir
                         # if still blocked, pick small perpendicular escape to avoid oscillation
                         small_escape = self.pos + np.array([-desired_dir[1], desired_dir[0]]) * 15
-                        if is_point_free(small_escape, nearby_walls, circles, rot_walls, polygons, self.radius):
+                        if is_point_free(small_escape, nearby_polygons, self.radius):
                             desired_dir = (small_escape - self.pos) / (np.linalg.norm(small_escape - self.pos) + 1e-6)
 
                 # Attempt forward movement by testing a small step. If blocked, try sliding.
                 step = 10.0
                 test = self.pos + desired_dir * step
-                test_rect = pygame.Rect(test[0]-15, test[1]-15, 30, 30)
-                blocked = any(test_rect.colliderect(w) for w in nearby_walls)
+                blocked = not is_point_free(test, nearby_polygons, self.radius)
 
                 if blocked:
                     # Try sliding on X axis
                     slide_x = np.array([desired_dir[0], 0.0])
                     test = self.pos + slide_x * step
-                    test_rect = pygame.Rect(test[0]-15, test[1]-15, 30, 30)
-                    if not any(test_rect.colliderect(w) for w in nearby_walls) and np.linalg.norm(slide_x) > 0:
+                    if is_point_free(test, nearby_polygons, self.radius) and np.linalg.norm(slide_x) > 0:
                         desired_dir = slide_x / (np.linalg.norm(slide_x) + 1e-6)
                     else:
                         # Try sliding on Y axis
                         slide_y = np.array([0.0, desired_dir[1]])
                         test = self.pos + slide_y * step
-                        test_rect = pygame.Rect(test[0]-15, test[1]-15, 30, 30)
-                        if not any(test_rect.colliderect(w) for w in nearby_walls) and np.linalg.norm(slide_y) > 0:
+                        if is_point_free(test, nearby_polygons, self.radius) and np.linalg.norm(slide_y) > 0:
                             desired_dir = slide_y / (np.linalg.norm(slide_y) + 1e-6)
                         else:
                             # fully blocked: try a tiny perpendicular jitter before giving up
@@ -371,7 +348,9 @@ class Gladiator:
                             if np.linalg.norm(perp) > 1e-6:
                                 desired_dir = (perp / np.linalg.norm(perp)) * 0.5
                             else:
-                                desired_dir = np.array([0.0, 0.0])            # ACCELERATION: Add to velocity instead of setting position
+                                desired_dir = np.array([0.0, 0.0])            
+            
+            # ACCELERATION: Add to velocity instead of setting position
             # If desired_dir is nearly zero, damp velocity to help unsticking
             if np.linalg.norm(desired_dir) < 1e-3:
                 # damping to prevent jitter against wall
@@ -449,52 +428,18 @@ class Gladiator:
                     self.pos += push * (overlap * 0.5)
                     hit_something = True
 
-            # Walls
-            player_rect = pygame.Rect(self.pos[0]-15, self.pos[1]-15, 30, 30)
-            for w in nearby_walls:
-                if player_rect.colliderect(w):
-                    d_left = abs(player_rect.right - w.left); d_right = abs(w.right - player_rect.left)
-                    d_top = abs(player_rect.bottom - w.top); d_bottom = abs(w.bottom - player_rect.top)
-                    min_d = min(d_left, d_right, d_top, d_bottom)
-                    if min_d == d_left:
-                        self.pos[0] -= d_left; self.vel[0] = min(0, self.vel[0])
-                    elif min_d == d_right:
-                        self.pos[0] += d_right; self.vel[0] = max(0, self.vel[0])
-                    elif min_d == d_top:
-                        self.pos[1] -= d_top; self.vel[1] = min(0, self.vel[1])
-                    elif min_d == d_bottom:
-                        self.pos[1] += d_bottom; self.vel[1] = max(0, self.vel[1])
-                    hit_something = True
-                    player_rect = pygame.Rect(self.pos[0]-15, self.pos[1]-15, 30, 30)
-
-            # Circles
-            for center, radius in circles:
-                c_pos = np.array(center); dist_vec = self.pos - c_pos
-                dist = np.linalg.norm(dist_vec); min_dist = radius + self.radius
-                if dist < min_dist:
-                    if dist == 0: push_dir = np.array([1.0, 0.0])
-                    else: push_dir = dist_vec / dist
-                    overlap = min_dist - dist
-                    self.pos += push_dir * overlap; hit_something = True
-
-            # Polygons
+            # Polygons (collision resolution)
             for poly in polygons:
                 hit, push = physics.resolve_circle_polygon(self.pos, self.radius, poly)
                 if hit:
                     self.pos += push
                     # Reflect velocity (Bounce off walls slightly)
+                    # Use full polygon list here for more accurate collision resolution
                     normal = push / np.linalg.norm(push)
                     dot = np.dot(self.vel, normal)
-                    if dot < 0: self.vel -= normal * dot
-                    hit_something = True
-
-            # Rotated Walls
-            for r_wall in rot_walls:
-                hit, normal, overlap = physics.check_circle_rotated_rect(self.pos, self.radius, r_wall)
-                if hit:
-                    self.pos += normal * overlap
-                    dot = np.dot(self.vel, normal)
-                    if dot < 0: self.vel -= normal * dot
+                    # Corrected reflection: only reflect if moving into the wall
+                    if dot < 0: 
+                        self.vel = self.vel - 2 * dot * normal
                     hit_something = True
 
             self.pos[0] = np.clip(self.pos[0], 0, settings.GAME_WIDTH)
@@ -506,19 +451,19 @@ class Gladiator:
         if self.swing_timer > 0: self.swing_timer -= 1
 
     
-    def find_reachable_wander(self, walls):
+    def find_reachable_wander(self, polygons):
         for _ in range(20):
             p = np.array([
                 random.uniform(50, settings.GAME_WIDTH-50),
                 random.uniform(50, settings.GAME_HEIGHT-50)
             ])
-            r = pygame.Rect(p[0]-20, p[1]-20, 40, 40)
-            if not any(r.colliderect(w) for w in walls):
+            # Use point-free test with a slightly smaller radius
+            if is_point_free(p, polygons, radius=20):
                 return p
         return self.pos.copy()
 
 
-    def update_weapon(self, walls, circles, rot_walls, polygons, enemies, particles, kill_feed):
+    def update_weapon(self, polygons, enemies, particles, kill_feed):
         if self.weapon_flying:
             # FIX: Slower speed (10)
             speed = 10 
@@ -530,18 +475,11 @@ class Gladiator:
             w_rect = pygame.Rect(self.weapon_pos[0]-25, self.weapon_pos[1]-8, 50, 16)
 
             hit_wall = False
-            for w in walls:
-                if w_rect.colliderect(w): hit_wall = True; break
-            if not hit_wall:
-                for center, radius in circles:
-                    if np.linalg.norm(self.weapon_pos - np.array(center)) < radius: hit_wall = True; break
-            if not hit_wall:
-                for r_wall in rot_walls:
-                    if physics.check_circle_rotated_rect(self.weapon_pos, 5, r_wall)[0]: hit_wall = True; break
-            if not hit_wall:
-                for poly in polygons:
-                    prev_pos = self.weapon_pos - self.weapon_dir * speed
-                    if physics.line_intersects_polygon(prev_pos, self.weapon_pos, poly): hit_wall = True; break
+            for poly in polygons:
+                prev_pos = self.weapon_pos - self.weapon_dir * speed
+                if physics.line_intersects_polygon(prev_pos, self.weapon_pos, poly):
+                    hit_wall = True
+                    break
             
             if hit_wall: 
                 self.weapon_pos -= self.weapon_dir * speed 
