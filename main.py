@@ -294,23 +294,6 @@ def main():
                     window.blit(w_rot, rect)
         
         if show_debug_walls:
-            # 1. Rectangular Walls
-            for w in map_config.WALLS:
-                screen_rect = pygame.Rect(SIDE_PANEL_WIDTH + (w.x * SCALE), w.y * SCALE, w.width * SCALE, w.height * SCALE)
-                pygame.draw.rect(window, (0, 255, 255), screen_rect, 2)
-            
-            # 2. Circular Columns
-            for center, radius in map_config.CIRCLES:
-                screen_center = to_screen(center)
-                screen_radius = int(radius * SCALE)
-                pygame.draw.circle(window, (0, 255, 255), screen_center, screen_radius, 2)
-
-            # 3. Rotated Walls
-            for data in map_config.ROTATED_WALLS:
-                game_corners = physics.get_corners(*data)
-                screen_corners = [to_screen(p) for p in game_corners]
-                pygame.draw.lines(window, (255, 0, 255), True, screen_corners, 2)
-
             # 4. Polygons
             for poly in map_config.POLYGONS:
                 screen_poly = [to_screen(p) for p in poly]

@@ -104,6 +104,7 @@ class Gladiator:
         self.stuck_origin = None  # Track where we got stuck
         self.walk_sound_timer = random.randint(0, 9)  # Stagger walk sounds so not all 8 players walk at once
         self.move_target = None  # Current movement target for debug display
+        self.avoid_bias = 1
 
     def logic(self, enemies, all_players, polygons, particles, kill_feed):
         if not self.alive: return
@@ -199,8 +200,46 @@ class Gladiator:
                 self.wander_target = self.find_reachable_wander(polygons) # Use full polygons for better reachability check
             move_target = self.wander_target
 
+        # ... inside Section 3 ...
+
         elif not self.has_weapon and self.weapon_pos is not None:
-            move_target = self.weapon_pos
+            # 1. Check if we have a direct path to the weapon
+            if vision.check_line_of_sight(self.pos, self.weapon_pos, nearby_polygons):
+                move_target = self.weapon_pos
+            else:
+                # 2. BLOCKED! We need to flank around the wall.
+                # We calculate two points: one to the Left, one to the Right.
+                to_weapon = self.weapon_pos - self.pos
+                dist = np.linalg.norm(to_weapon)
+                
+                if dist > 0:
+                    dir_to = to_weapon / dist
+                    # Create a perpendicular vector (90 degree turn)
+                    perp = np.array([-dir_to[1], dir_to[0]]) 
+                    
+                    # Define two "Detour Points" 60 pixels to the side
+                    flank_left = self.pos + (perp * 60) + (dir_to * 20)
+                    flank_right = self.pos - (perp * 60) + (dir_to * 20)
+                    
+                    # Check which side is open
+                    left_free = is_point_free(flank_left, nearby_polygons, self.radius)
+                    right_free = is_point_free(flank_right, nearby_polygons, self.radius)
+                    
+                    if left_free and not right_free:
+                        move_target = flank_left
+                    elif right_free and not left_free:
+                        move_target = flank_right
+                    elif left_free and right_free:
+                        # If both are open, pick the one closer to the weapon (shorter path)
+                        if np.linalg.norm(flank_left - self.weapon_pos) < np.linalg.norm(flank_right - self.weapon_pos):
+                            move_target = flank_left
+                        else:
+                            move_target = flank_right
+                    else:
+                        # Both blocked? Just push forward and hope the slide logic works
+                        move_target = self.weapon_pos
+                else:
+                    move_target = self.weapon_pos
 
         elif closest_visible_enemy:
             self.patrol_target = None
@@ -307,14 +346,30 @@ class Gladiator:
 
                 if blocked_ahead:
                     # BLOCKED! Try Fan Sweep to find an actually traversable opening (also validate with point_is_free)
+                    # ... inside logic method, step 4 ...
+
+                    # 1. Define the angles based on our bias
+                    if self.avoid_bias == 1:
+                        # Check POSITIVE (Right) side first
+                        check_angles = [45, 90, 135, -45, -90, -135]
+                    else:
+                        # Check NEGATIVE (Left) side first
+                        check_angles = [-45, -90, -135, 45, 90, 135]
+
                     found_path = False
-                    for angle in [45, -45, 90, -90, 135, -135]:
+                    for angle in check_angles:
                         test_dir = physics.rotate_vector(desired_dir, angle)
                         test_look = self.pos + test_dir * 50
-                        # require both line-of-sight to that point AND that landing point is free
+                        
+                        # Check if this path is valid
                         if not vision.cast_ray(self.pos, test_look, nearby_polygons) and is_point_free(self.pos + test_dir*15, nearby_polygons, self.radius):
                             desired_dir = test_dir
                             found_path = True
+                            
+                            # KEY FIX: Update the bias! 
+                            # If we successfully found a path using a positive angle, keep biasing positive.
+                            if angle > 0: self.avoid_bias = 1
+                            elif angle < 0: self.avoid_bias = -1
                             break
 
                     if not found_path:
@@ -358,48 +413,72 @@ class Gladiator:
             else:
                 self.vel += desired_dir * self.speed
 
-        # 5. AIMING & ATTACK (unchanged)
+        # 5. AIMING & ATTACK
         if closest_visible_enemy:
+            # --- COMBAT MODE: Look at enemy ---
             target_vec = closest_visible_enemy.pos - self.pos
             self.angle = math.atan2(target_vec[1], target_vec[0])
 
+            # A. MELEE ATTACK (Range < 70)
             if self.has_weapon and min_vis_dist < 70 and self.cooldown <= 0:
                 closest_visible_enemy.hp -= self.melee_dmg
                 self.cooldown = 30
                 self.swing_timer = 15
                 sound_manager.play_swing()
+                
+                # Visuals: Blood particles
                 for _ in range(5):
                     particles.append(Particle(closest_visible_enemy.pos[0], closest_visible_enemy.pos[1], (255, 0, 0), 4))
-                # If the hit killed the target, play death sound only; otherwise play collision
+                
+                # Check for Kill
                 if closest_visible_enemy.hp <= 0:
                     closest_visible_enemy.alive = False
-                    try:
-                        sound_manager.play_death()
-                    except Exception:
-                        pass
+                    try: sound_manager.play_death()
+                    except: pass
                     kill_feed.append(f"{self.name} STABBED {closest_visible_enemy.name}")
                 else:
-                    try:
-                        sound_manager.play_collision()
-                    except Exception:
-                        pass
+                    try: sound_manager.play_collision()
+                    except: pass
+
+            # B. RANGED ATTACK (Throw)
             else:
+                # Check random chance based on bias (0.0 = always throw, 1.0 = never throw)
+                # We check this every frame, so even a small chance will trigger eventually.
                 wants_to_throw = random.random() > self.melee_bias
+
+                # Check: Has Weapon + Cooldown Ready + In Range + Random Chance passed
                 if self.has_weapon and self.cooldown <= 0 and min_vis_dist < 800 and wants_to_throw:
+                    # Calculate aim with some jitter (inaccuracy)
                     lead_pos = closest_visible_enemy.pos + (closest_visible_enemy.vel * 15)
                     aim_vec = lead_pos - self.pos
                     base_angle = math.atan2(aim_vec[1], aim_vec[0])
+                    
                     jitter = (1.0 - self.accuracy) * 0.5
                     final_angle = base_angle + random.uniform(-jitter, jitter)
+                    
+                    # Execute Throw
                     self.has_weapon = False
                     self.weapon_flying = True
                     self.weapon_pos = self.pos.copy()
                     self.weapon_dir = np.array([math.cos(final_angle), math.sin(final_angle)])
+                    
                     sound_manager.play_throw()
                     self.cooldown = self.max_cooldown
+
         else:
-            if np.linalg.norm(self.vel) > 0.1:
-                self.angle = math.atan2(self.vel[1], self.vel[0])
+            # --- PATROL MODE: Look where we are walking (Smoothed) ---
+            # Only update angle if moving significantly to prevent jitter
+            if np.linalg.norm(self.vel) > 0.5:
+                target_angle = math.atan2(self.vel[1], self.vel[0])
+                
+                # Smooth rotation (Head Shake Fix)
+                diff = target_angle - self.angle
+                # Normalize angle to -PI to PI range
+                while diff > math.pi: diff -= 2 * math.pi
+                while diff < -math.pi: diff += 2 * math.pi
+                
+                # Turn speed (0.2 = slow smooth turn, 1.0 = instant snap)
+                self.angle += diff * 0.2
 
         # 6. FRICTION & MOVEMENT
         self.vel *= 0.9  # Friction prevents infinite speed
@@ -439,7 +518,7 @@ class Gladiator:
                     dot = np.dot(self.vel, normal)
                     # Corrected reflection: only reflect if moving into the wall
                     if dot < 0: 
-                        self.vel = self.vel - 2 * dot * normal
+                        self.vel = self.vel - 1.2 * dot * normal
                     hit_something = True
 
             self.pos[0] = np.clip(self.pos[0], 0, settings.GAME_WIDTH)
@@ -483,8 +562,10 @@ class Gladiator:
             
             if hit_wall: 
                 self.weapon_pos -= self.weapon_dir * speed 
+                sword_half_length = 25
+                self.weapon_pos -= self.weapon_dir * sword_half_length
                 self.weapon_flying = False
-                hit_pos = self.weapon_pos + self.weapon_dir * speed
+                hit_pos = self.weapon_pos + self.weapon_dir * (sword_half_length + 5)
                 sound_manager.play_collision()
                 for _ in range(5): particles.append(Particle(hit_pos[0], hit_pos[1], (255, 255, 0), 3))
             elif not (0 < self.weapon_pos[0] < settings.GAME_WIDTH) or not (0 < self.weapon_pos[1] < settings.GAME_HEIGHT):
