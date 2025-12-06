@@ -58,6 +58,7 @@ def main():
     
     font_title = pygame.font.SysFont("Arial", 28, bold=True)
     font_text = pygame.font.SysFont("Arial", 20)
+    font_small = pygame.font.SysFont("Arial", 14)
     font_win = pygame.font.SysFont("Arial", 64, bold=True)
     font_countdown = pygame.font.SysFont("Arial", 300, bold=True)
 
@@ -389,10 +390,10 @@ def main():
 
 
         # 4. Draw UI
-        draw_left_panel(left_ui_surface, green_team, font_title, font_text)
+        draw_left_panel(left_ui_surface, green_team, font_title, font_text, font_small)
         # Draw debug info on left panel (per-player stuck/escape state)
-        draw_debug_panel(left_ui_surface, all_players, font_text)
-        draw_right_panel(right_ui_surface, red_team, kill_feed, font_title, font_text)
+        # draw_debug_panel(left_ui_surface, all_players, font_text)
+        draw_right_panel(right_ui_surface, red_team, kill_feed, font_title, font_text, font_small)
         
         window.blit(left_ui_surface, (0, 0))
         window.blit(right_ui_surface, (SIDE_PANEL_WIDTH + DISPLAY_GAME_WIDTH, 0))

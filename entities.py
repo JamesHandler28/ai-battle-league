@@ -62,6 +62,10 @@ class Gladiator:
         self.max_hp = stats.hp
         self.hp = stats.hp
         
+        self.kills = 0
+        self.deaths = 0
+        self.damage_dealt = 0
+        
         # RESTORED: Acceleration-based speed
         # Multiplied by 1.5 to compensate for the larger screen/hitboxes
         self.speed = stats.speed * 0.6
@@ -422,6 +426,7 @@ class Gladiator:
             # A. MELEE ATTACK (Range < 70)
             if self.has_weapon and min_vis_dist < 70 and self.cooldown <= 0:
                 closest_visible_enemy.hp -= self.melee_dmg
+                self.damage_dealt += self.melee_dmg
                 self.cooldown = 30
                 self.swing_timer = 15
                 sound_manager.play_swing()
@@ -433,6 +438,7 @@ class Gladiator:
                 # Check for Kill
                 if closest_visible_enemy.hp <= 0:
                     closest_visible_enemy.alive = False
+                    self.kills += 1
                     try: sound_manager.play_death()
                     except: pass
                     kill_feed.append(f"{self.name} STABBED {closest_visible_enemy.name}")
@@ -543,6 +549,11 @@ class Gladiator:
 
 
     def update_weapon(self, polygons, enemies, particles, kill_feed):
+        if not self.alive:
+            self.weapon_flying = False
+            self.weapon_pos = None
+            return
+        
         if self.weapon_flying:
             # FIX: Slower speed (10)
             speed = 10 
@@ -578,10 +589,12 @@ class Gladiator:
                         hit, _, _ = physics.check_circle_rotated_rect(e.pos, e.radius, weapon_hitbox)
                         if hit:
                             e.hp -= self.throw_dmg
+                            self.damage_dealt += self.throw_dmg
                             self.weapon_flying = False
                             # If the projectile killed the player, play death sound only; otherwise play collision
                             if e.hp <= 0:
                                 e.alive = False
+                                self.kills += 1
                                 try:
                                     sound_manager.play_death()
                                 except Exception:

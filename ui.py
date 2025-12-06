@@ -3,75 +3,67 @@ import settings
 import roster
 import numpy as np
 
-def draw_health_bars(surface, team, y_start, font_text, color_bar):
+def draw_team_stats(surface, team, y_start, font_text, font_small, color_primary):
     y_off = y_start
+    panel_width = surface.get_width()
+    bar_width = 160
+    
     for p in team:
-        # Name
-        color_text = (255, 255, 255) if p.alive else (100, 100, 100)
-        name_txt = font_text.render(f"{p.name} ({max(0, int(p.hp))}/{p.max_hp})", True, color_text)
+        # --- PREPARE DATA ---
+        kills = getattr(p, 'kills', 0)
+        deaths = getattr(p, 'deaths', 0)
+        dmg = getattr(p, 'damage_dealt', 0)
+        cooldown = getattr(p, 'cooldown', 0)
+        max_cooldown = getattr(p, 'max_cooldown', 60)
+        
+        text_color = (255, 255, 255) if p.alive else (100, 100, 100)
+        
+        # Row 1: Name and K/D
+        name_txt = font_text.render(p.name, True, text_color)
         surface.blit(name_txt, (20, y_off))
         
-        # Bar
-        if p.alive:
-            pct = max(0, p.hp / p.max_hp)
-            # Draw bar below name
-            pygame.draw.rect(surface, (50, 0, 0), (20, y_off + 25, 200, 10))
-            pygame.draw.rect(surface, color_bar, (20, y_off + 25, 200 * pct, 10))
+        kd_txt = font_text.render(f"K:{kills} D:{deaths}", True, (255, 215, 0))
+        surface.blit(kd_txt, (panel_width - 20 - kd_txt.get_width(), y_off))
         
-        y_off += 50 # Spacing
+        # Row 2: HP Bar + DMG
+        y_bar = y_off + 22
+        pygame.draw.rect(surface, (50, 0, 0), (20, y_bar, bar_width, 10)) # BG
+        
+        if p.alive:
+            hp_pct = max(0, p.hp / p.max_hp)
+            pygame.draw.rect(surface, color_primary, (20, y_bar, bar_width * hp_pct, 10)) # FG
+            
+            # Tiny HP Text
+            hp_txt = font_small.render(f"{int(p.hp)}/{p.max_hp}", True, (255, 255, 255))
+            surface.blit(hp_txt, (20 + bar_width/2 - hp_txt.get_width()/2, y_bar - 1))
 
-def draw_left_panel(surface, green_team, font_title, font_text):
+        dmg_txt = font_small.render(f"DMG: {int(dmg)}", True, (200, 200, 200))
+        surface.blit(dmg_txt, (20 + bar_width + 10, y_bar))
+
+        # Row 3: Cooldown Bar
+        if p.alive:
+            y_cd = y_bar + 14
+            cd_pct = 1.0 - min(1.0, max(0, cooldown / max_cooldown))
+            pygame.draw.rect(surface, (0, 0, 50), (20, y_cd, bar_width, 4))
+            cd_color = (0, 255, 255) if cd_pct == 1.0 else (0, 100, 200)
+            pygame.draw.rect(surface, cd_color, (20, y_cd, bar_width * cd_pct, 4))
+
+        y_off += 60 # Spacing
+
+# Added font_small to arguments
+def draw_left_panel(surface, green_team, font_title, font_text, font_small): 
     surface.fill(settings.UI_BG_COLOR)
     
     # Title
     title = font_title.render(roster.TEAM_GREEN_TITLE, True, settings.GREEN_TEAM_COLOR)
-    # Center title horizontally
     rect = title.get_rect(center=(surface.get_width()//2, 40))
     surface.blit(title, rect)
     
-    # Draw Green Stats
-    draw_health_bars(surface, green_team, 80, font_text, settings.GREEN_TEAM_COLOR)
+    # Draw Green Stats (Using new function)
+    draw_team_stats(surface, green_team, 80, font_text, font_small, settings.GREEN_TEAM_COLOR)
 
-
-def draw_debug_panel(surface, players, font_text):
-    """Draw per-player debug info on the provided UI surface (left side).
-    Shows name, stuck timer, escape direction and stuck origin distance.
-    """
-    x = 20
-    # Start a bit lower to avoid overlapping team list
-    y = 80 + (len(players[:8]) * 50) + 10
-    # Draw a titled box
-    pygame.draw.rect(surface, (30, 30, 30), (10, y - 10, surface.get_width() - 20, min(400, surface.get_height() - y - 20)))
-    title = font_text.render("DEBUG (Players)", True, (200, 200, 200))
-    surface.blit(title, (x, y))
-    y += 24
-
-    for p in players:
-        try:
-            name = p.name
-            stuck = int(p.stuck_timer) if hasattr(p, 'stuck_timer') else 0
-            esc = p.escape_dir if hasattr(p, 'escape_dir') else None
-            esc_str = "(0.00,0.00)"
-            if esc is not None:
-                esc_str = f"({esc[0]:.2f},{esc[1]:.2f})"
-            origin_dist = "N/A"
-            if hasattr(p, 'stuck_origin') and p.stuck_origin is not None:
-                try:
-                    origin_dist = f"{np.linalg.norm(p.pos - p.stuck_origin):.1f}"
-                except Exception:
-                    origin_dist = "N/A"
-
-            # Colorize name when actively stuck
-            color = (255, 100, 100) if stuck > 0 else (200, 200, 200)
-            txt = font_text.render(f"{name}: STK={stuck} ESC={esc_str} OR_DIST={origin_dist}", True, color)
-            surface.blit(txt, (x, y))
-            y += 20
-            if y > surface.get_height() - 30:
-                break
-        except Exception:
-            continue
-
-def draw_right_panel(surface, red_team, kill_feed, font_title, font_text):
+# Added font_small to arguments
+def draw_right_panel(surface, red_team, kill_feed, font_title, font_text, font_small):
     surface.fill(settings.UI_BG_COLOR)
     
     # Title
@@ -79,45 +71,23 @@ def draw_right_panel(surface, red_team, kill_feed, font_title, font_text):
     rect = title.get_rect(center=(surface.get_width()//2, 40))
     surface.blit(title, rect)
     
-    # Draw Red Stats
-    draw_health_bars(surface, red_team, 80, font_text, settings.RED_TEAM_COLOR)
+    # Draw Red Stats (Using new function)
+    draw_team_stats(surface, red_team, 80, font_text, font_small, settings.RED_TEAM_COLOR)
 
-    # Draw Kill Feed at Bottom
+    # Draw Kill Feed
     kf_y = surface.get_height() - 250
     pygame.draw.line(surface, (100, 100, 100), (20, kf_y), (surface.get_width()-20, kf_y), 2)
     
     kf_title = font_title.render("KILL FEED", True, (255, 255, 0))
     surface.blit(kf_title, (20, kf_y + 10))
     
-    msg_y = kf_y + 50
-    for msg in kill_feed[-6:]: # Show last 6 kills
-        txt = font_text.render(msg, True, (200, 200, 200))
+    msg_y = kf_y + 40
+    for msg in kill_feed[-8:]: 
+        # Using font_small for feed
+        txt = font_small.render(msg, True, (220, 220, 220))
         surface.blit(txt, (20, msg_y))
-        msg_y += 25
+        msg_y += 20
 
-def draw_debug_panel(surface, players, font):
-    """Draws a debug panel on the left UI surface."""
-    y_offset = 300  # Start below the team list
-    for i, p in enumerate(players):
-        state = "IDLE"
-        if p.escape_timer > 0:
-            state = f"ESCAPE ({p.escape_timer})"
-        elif p.stuck_timer > 0:
-            state = f"STUCK ({p.stuck_timer})"
-        elif p.wander_target is not None:
-            state = "WANDER"
-        elif p.patrol_target is not None:
-            state = "PATROL"
-        
-        color = (255, 255, 0) # Yellow for debug info
-        
-        debug_text = f"{p.name}: {state}"
-        text_surf = font.render(debug_text, True, color)
-        surface.blit(text_surf, (10, y_offset))
-        y_offset += 20
-        
-        if p.move_target is not None:
-            target_text = f"  Target: ({int(p.move_target[0])}, {int(p.move_target[1])})"
-            text_surf = font.render(target_text, True, color)
-            surface.blit(text_surf, (10, y_offset))
-            y_offset += 25 # Extra space between players
+def draw_debug_panel(surface, players, font_text):
+    # (Kept simple for now)
+    pass
