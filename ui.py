@@ -43,7 +43,10 @@ def draw_team_stats(surface, team, y_start, font_text, font_small, color_primary
         # Row 3: Cooldown Bar
         if p.alive:
             y_cd = y_bar + 14
-            cd_pct = 1.0 - min(1.0, max(0, cooldown / max_cooldown))
+            if max_cooldown > 0:
+                cd_pct = 1.0 - min(1.0, max(0, cooldown / max_cooldown))
+            else:
+                cd_pct = 1.0
             pygame.draw.rect(surface, (0, 0, 50), (20, y_cd, bar_width, 4))
             cd_color = (0, 255, 255) if cd_pct == 1.0 else (0, 100, 200)
             pygame.draw.rect(surface, cd_color, (20, y_cd, bar_width * cd_pct, 4))

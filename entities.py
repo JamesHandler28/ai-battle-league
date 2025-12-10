@@ -109,11 +109,14 @@ class Gladiator:
         self.walk_sound_timer = random.randint(0, 9)  # Stagger walk sounds so not all 8 players walk at once
         self.move_target = None  # Current movement target for debug display
         self.avoid_bias = 1
+        
+        self.warmup_timer = 100
 
     def logic(self, enemies, all_players, polygons, particles, kill_feed):
         if not self.alive: return
 
-        
+        if self.warmup_timer > 0:
+            self.warmup_timer -= 1
 
         # --- OPTIMIZATION: Filter Polygons (Prevents Lag) ---
         nearby_polygons = []
@@ -450,10 +453,12 @@ class Gladiator:
             else:
                 # Check random chance based on bias (0.0 = always throw, 1.0 = never throw)
                 # We check this every frame, so even a small chance will trigger eventually.
+                can_throw_time = self.warmup_timer <= 0
+                
                 wants_to_throw = random.random() > self.melee_bias
 
                 # Check: Has Weapon + Cooldown Ready + In Range + Random Chance passed
-                if self.has_weapon and self.cooldown <= 0 and min_vis_dist < 800 and wants_to_throw:
+                if self.has_weapon and wants_to_throw and self.cooldown <= 0 and min_vis_dist < 800 and wants_to_throw:
                     # Calculate aim with some jitter (inaccuracy)
                     lead_pos = closest_visible_enemy.pos + (closest_visible_enemy.vel * 15)
                     aim_vec = lead_pos - self.pos

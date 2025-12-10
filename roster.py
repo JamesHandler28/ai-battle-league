@@ -24,7 +24,7 @@ ALL_BOTS = [
 
     # TEAM QUAHOG (BLUE) ["Peter", "Stewie", "Brian", "Lois"]
     BotStats("Peter",     "QPeter.png",      hp=9, speed=0.4, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=100, strafe_rate=0.0, accuracy=0.5, melee_bias=0.4),
-    BotStats("Stewie",    "QStewie.png",     hp=9, speed=0.2, melee_dmg=2, throw_dmg=6, cooldown=30, aggression=700, strafe_rate=0.3, accuracy=0.9, melee_bias=0.3),
+    BotStats("Stewie",    "QStewie.png",     hp=9, speed=0.3, melee_dmg=2, throw_dmg=6, cooldown=30, aggression=700, strafe_rate=0.3, accuracy=0.9, melee_bias=0.3),
     BotStats("Brian",     "QBrian.png",      hp=9, speed=0.7, melee_dmg=2, throw_dmg=6, cooldown=30, aggression=400, strafe_rate=0.1, accuracy=0.8, melee_bias=0.6),
     BotStats("Lois",      "QLois.png",       hp=9, speed=0.5, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=200, strafe_rate=0.2, accuracy=0.7, melee_bias=0.5),
 
@@ -40,7 +40,7 @@ ALL_BOTS = [
     BotStats("Lisa",      "SLisa.png",       hp=9, speed=0.5, melee_dmg=2, throw_dmg=6, cooldown=30, aggression=800, strafe_rate=0.1, accuracy=1.0, melee_bias=0.6),
     BotStats("Marge",     "SMarge.png",      hp=9, speed=0.3, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=400, strafe_rate=0.2, accuracy=0.7, melee_bias=0.6),
     
-    # TEAM RING (GREEN) ["Sonic", "Knuckles", "Tails", "Shadow"]
+    # TEAM RINGS (GREEN) ["Sonic", "Knuckles", "Tails", "Shadow"]
     BotStats("Sonic",     "RSonic.png",      hp=9, speed=1.0, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=100, strafe_rate=0.8, accuracy=0.6, melee_bias=0.3),
     BotStats("Knuckles",  "RKnuckles.png",   hp=9, speed=0.8, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=100, strafe_rate=0.8, accuracy=0.5, melee_bias=0.8),
     BotStats("Tails",     "RTails.png",      hp=9, speed=0.7, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=500, strafe_rate=0.8, accuracy=0.7, melee_bias=0.2),
@@ -53,7 +53,7 @@ ALL_BOTS = [
     BotStats("Wonder",    "DCWonder.png",    hp=9, speed=0.5, melee_dmg=2, throw_dmg=6, cooldown=30, aggression=100, strafe_rate=0.0, accuracy=0.5, melee_bias=0.3),
 
     # TEAM SOUTH PARK (WHITE) ["Cartman", "Kenny", "Kyle", "Stan"]
-    BotStats("Cartman",   "SPCartman.png",   hp=9, speed=0.2, melee_dmg=5, throw_dmg=6, cooldown=120, aggression=150, strafe_rate=0.1, accuracy=0.7, melee_bias=0.4),
+    BotStats("Cartman",   "SPCartman.png",   hp=9, speed=0.3, melee_dmg=5, throw_dmg=6, cooldown=120, aggression=150, strafe_rate=0.1, accuracy=0.7, melee_bias=0.4),
     BotStats("Kenny",     "SPKenny.png",     hp=9, speed=0.7, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=200, strafe_rate=0.5, accuracy=0.5, melee_bias=0.5),
     BotStats("Kyle",      "SPKyle.png",      hp=9, speed=0.4, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=500, strafe_rate=0.2, accuracy=0.8, melee_bias=0.5),
     BotStats("Stan",      "SPStan.png",      hp=9, speed=0.5, melee_dmg=3, throw_dmg=6, cooldown=60, aggression=300, strafe_rate=0.2, accuracy=0.7, melee_bias=0.4),
@@ -65,15 +65,15 @@ ALL_BOTS = [
     BotStats("Woodstock", "PWoodstock.png",  hp=9, speed=0.6, melee_dmg=5, throw_dmg=6, cooldown=120, aggression=500, strafe_rate=0.3, accuracy=0.7, melee_bias=0.3),
     
     # OTHERS
-    BotStats("67",        "67kid.png",       hp=30, speed=1.0, melee_dmg=5, throw_dmg=9, cooldown=0, aggression=800, strafe_rate=1.0, accuracy=1.0, melee_bias=0.1),
+    BotStats("67",        "67kid.png",       hp=30, speed=1.0, melee_dmg=5, throw_dmg=6, cooldown=0, aggression=800, strafe_rate=1.0, accuracy=1.0, melee_bias=0.1),
 ]
 
 # --- MATCHUP CONFIG ---
 
 # 1. Custom Team Names (Displayed in UI)
 TEAM_GREEN_TITLE = "DC"
-TEAM_RED_TITLE   = "Ring"
+TEAM_RED_TITLE   = "Peanuts"
 
 # 2. Who is fighting?
 TEAM_GREEN_NAMES = ["Superman", "Batman", "Flash", "Wonder"]
-TEAM_RED_NAMES   = ["Sonic", "Knuckles", "Tails", "Shadow"]
+TEAM_RED_NAMES   = ["Charlie B", "Snoopy", "Lucy", "Woodstock"]
