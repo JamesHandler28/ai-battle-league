@@ -66,14 +66,16 @@ ALL_BOTS = [
     
     # OTHERS
     BotStats("67",        "67kid.png",       hp=30, speed=1.0, melee_dmg=5, throw_dmg=6, cooldown=0, aggression=800, strafe_rate=1.0, accuracy=1.0, melee_bias=0.1),
+    BotStats("Mike",      "mike.png",        hp=30, speed=2.0, melee_dmg=9, throw_dmg=9, cooldown=0, aggression=800, strafe_rate=1.0, accuracy=1.0, melee_bias=0.1),
 ]
 
 # --- MATCHUP CONFIG ---
 
 # 1. Custom Team Names (Displayed in UI)
-TEAM_GREEN_TITLE = "DC"
-TEAM_RED_TITLE   = "Peanuts"
+TEAM_GREEN_TITLE = "mike"
+TEAM_RED_TITLE   = "Everyone Else"
 
 # 2. Who is fighting?
-TEAM_GREEN_NAMES = ["Superman", "Batman", "Flash", "Wonder"]
-TEAM_RED_NAMES   = ["Charlie B", "Snoopy", "Lucy", "Woodstock"]
+TEAM_GREEN_NAMES = ["Mike"]
+TEAM_RED_NAMES   = ["Patrick", "Homer", "Cartman", "Peter", "Charlie B", "Peach", "Wonder", "Tails",
+                    "Stewie", "Bowser", "Batman", "Shadow", "Spongebob", "Marge", "Lois"]
